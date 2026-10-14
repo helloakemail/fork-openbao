@@ -111,8 +111,11 @@ func TestKV(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, list.Data["keys"], 20)
 	require.NoError(t, kv.Delete(t.Context(), "app/s7"))
-	_, err = kv.Get(t.Context(), "app/s7")
-	require.Error(t, err)
+	s, err = kv.Get(t.Context(), "app/s7")
+	if err == nil {
+		require.Nil(t, s.Data, "soft-deleted version must have no data")
+		require.NotZero(t, s.VersionMetadata.DeletionTime)
+	}
 	require.NoError(t, c.Sys().Unmount(mount))
 }
 

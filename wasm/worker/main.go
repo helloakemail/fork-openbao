@@ -73,7 +73,12 @@ type server struct {
 
 func main() {
 	s := &server{}
-	workers.Serve(s)
+	// workers.Serve would return (and the Go program exit) as soon as the first
+	// response body is closed. The loader keeps one Go instance per isolate,
+	// so register the handler, signal readiness and then block forever.
+	workers.ServeNonBlock(s)
+	workers.Ready()
+	select {}
 }
 
 // ServeHTTP lazily builds the core on the first request (bindings and
