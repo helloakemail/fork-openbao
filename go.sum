@@ -418,8 +418,6 @@ github.com/hashicorp/go-secure-stdlib/fileutil v0.1.0 h1:f2mwVgMJjXuX/+eWD6ZW30+
 github.com/hashicorp/go-secure-stdlib/fileutil v0.1.0/go.mod h1:uwcr2oga9pN5+OkHZyTN5MDk3+1YHOuMukhpnPaQAoI=
 github.com/hashicorp/go-secure-stdlib/kv-builder v0.1.2 h1:NS6BHieb/pDfx3M9jDdaPpGyyVp+aD4A3DjX3dgRmzs=
 github.com/hashicorp/go-secure-stdlib/kv-builder v0.1.2/go.mod h1:rf5JPE13wi+NwjgsmGkbg4b2CgHq8v7Htn/F0nDe/hg=
-github.com/hashicorp/go-secure-stdlib/mlock v0.1.3 h1:kH3Rhiht36xhAfhuHyWJDgdXXEx9IIZhDGRk24CDhzg=
-github.com/hashicorp/go-secure-stdlib/mlock v0.1.3/go.mod h1:ov1Q0oEDjC3+A4BwsG2YdKltrmEw8sf9Pau4V9JQ4Vo=
 github.com/hashicorp/go-secure-stdlib/nonceutil v0.1.0 h1:iJG9Q3iUme12yH+wzBMGYrw/Am4CfX3sDcA8m5OGfhQ=
 github.com/hashicorp/go-secure-stdlib/nonceutil v0.1.0/go.mod h1:s28ohJ0kU6tersf0it/WsBCyZSdziPlP+G1FRA3ar28=
 github.com/hashicorp/go-secure-stdlib/parseutil v0.2.0 h1:U+kC2dOhMFQctRfhK0gRctKAPTloZdMU5ZJxaesJ/VM=
@@ -773,6 +771,8 @@ github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/
 github.com/stretchr/testify v1.7.2/go.mod h1:R6va5+xMeoiuVRoj+gSkQ7d3FALtqAAGI1FQKckRals=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
+github.com/syumai/workers-go v0.36.0 h1:G00h0CkA8+VgHwtG+XQBWueRDcW4NVmz0yWU3b/GH4M=
+github.com/syumai/workers-go v0.36.0/go.mod h1:nGxyOzoikm2rDoGAduCQucbljH9wjhdk+4Rk4leKCBQ=
 github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.0.480 h1:Dwnfdrk3KXpYRH9Kwrk9sHpZSOmrE7P9LBoNsYUJKR4=
 github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.0.480/go.mod h1:7sCQWVkxcsR38nffDW057DRGk8mUjK1Ing/EFOK8s8Y=
 github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm v1.0.480 h1:YEDZmv2ABU8QvwXEVTOQgVEQzDOByhz73vdjL6sERkE=

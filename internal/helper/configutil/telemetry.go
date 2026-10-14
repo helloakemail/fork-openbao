@@ -4,16 +4,12 @@
 package configutil
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/hashicorp/go-secure-stdlib/parseutil"
 
-	monitoring "cloud.google.com/go/monitoring/apiv3"
-	stackdriver "github.com/google/go-metrics-stackdriver"
-	stackdrivervault "github.com/google/go-metrics-stackdriver/vault"
 	"github.com/hashicorp/cli"
 	metrics "github.com/hashicorp/go-metrics/compat"
 	"github.com/hashicorp/go-metrics/compat/circonus"
@@ -23,7 +19,6 @@ import (
 	"github.com/hashicorp/hcl"
 	"github.com/hashicorp/hcl/hcl/ast"
 	"github.com/openbao/openbao/v2/internal/helper/metricsutil"
-	"google.golang.org/api/option"
 )
 
 const (
@@ -364,18 +359,10 @@ func SetupTelemetry(opts *SetupTelemetryOpts) (*metrics.InmemSink, *metricsutil.
 
 	// Configure the stackdriver sink
 	if opts.Config.StackdriverProjectID != "" {
-		client, err := monitoring.NewMetricClient(context.Background(), option.WithUserAgent(opts.UserAgent))
+		sink, err := newStackdriverSink(opts)
 		if err != nil {
-			return nil, nil, false, fmt.Errorf("failed to create stackdriver client: %v", err)
+			return nil, nil, false, err
 		}
-		sink := stackdriver.NewSink(client, &stackdriver.Config{
-			LabelExtractor: stackdrivervault.Extractor,
-			Bucketer:       stackdrivervault.Bucketer,
-			ProjectID:      opts.Config.StackdriverProjectID,
-			Location:       opts.Config.StackdriverLocation,
-			Namespace:      opts.Config.StackdriverNamespace,
-			DebugLogs:      opts.Config.StackdriverDebugLogs,
-		})
 		fanout = append(fanout, sink)
 	}
 

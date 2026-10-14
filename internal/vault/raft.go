@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -20,8 +19,6 @@ import (
 
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/hashicorp/go-cleanhttp"
-	"github.com/hashicorp/go-discover"
-	discoverk8s "github.com/hashicorp/go-discover/provider/k8s"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-secure-stdlib/tlsutil"
 	"github.com/hashicorp/go-uuid"
@@ -1066,7 +1063,7 @@ func (c *Core) JoinRaftCluster(ctx context.Context, leaderInfos []*raft.LeaderJo
 }
 
 // raftLeaderInfo uses go-discover to expand leaderInfo to include any auto-join results.
-func (c *Core) raftLeaderInfo(leaderInfo *raft.LeaderJoinInfo, disco *discover.Discover) ([]*raft.LeaderJoinInfo, error) {
+func (c *Core) raftLeaderInfo(leaderInfo *raft.LeaderJoinInfo, disco autoJoinDiscoverer) ([]*raft.LeaderJoinInfo, error) {
 	var ret []*raft.LeaderJoinInfo
 	switch {
 	case leaderInfo.LeaderAPIAddr != "" && leaderInfo.AutoJoin != "":
@@ -1310,15 +1307,4 @@ type answerRespData struct {
 type answerResp struct {
 	Peers      []raft.Peer      `json:"peers"`
 	TLSKeyring *raft.TLSKeyring `json:"tls_keyring"`
-}
-
-func newDiscover() (*discover.Discover, error) {
-	providers := make(map[string]discover.Provider)
-	maps.Copy(providers, discover.Providers)
-
-	providers["k8s"] = &discoverk8s.Provider{}
-
-	return discover.New(
-		discover.WithProviders(providers),
-	)
 }

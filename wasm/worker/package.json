@@ -1,0 +1,13 @@
+{
+  "name": "openbao-worker",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "go run github.com/syumai/workers-go/cmd/workers-assets-gen -mode=go && cp loader/worker.mjs build/worker.mjs && cd ../.. && GOOS=js GOARCH=wasm go build -tags hashicorpmetrics -ldflags='-s -w' -o wasm/worker/build/app.wasm ./wasm/worker",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}

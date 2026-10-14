@@ -12,7 +12,6 @@ import (
 	log "github.com/hashicorp/go-hclog"
 	"github.com/openbao/openbao/api/v2"
 	"github.com/openbao/openbao/sdk/v2/physical"
-	"github.com/openbao/openbao/v2/internal/physical/pebbledb"
 )
 
 // Verify interfaces are satisfied
@@ -118,7 +117,7 @@ func NewDirectInmem(conf map[string]string, logger log.Logger) (physical.Backend
 	}
 
 	conf["path"] = ":memory:"
-	backend, err := pebbledb.NewBackend(conf, logger)
+	backend, err := newUnderlyingBackend(conf, logger)
 	if err != nil {
 		return nil, fmt.Errorf("error creating underlying implementation: %w", err)
 	}

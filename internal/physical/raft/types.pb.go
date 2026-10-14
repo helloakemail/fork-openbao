@@ -7,6 +7,8 @@
 // 	protoc        v7.34.0
 // source: internal/physical/raft/types.proto
 
+//go:build !js
+
 package raft
 
 import (

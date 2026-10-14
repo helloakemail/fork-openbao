@@ -119,6 +119,7 @@ require (
 	github.com/sethvargo/go-limiter v1.2.0
 	github.com/shirou/gopsutil/v4 v4.26.9
 	github.com/stretchr/testify v1.12.1
+	github.com/syumai/workers-go v0.36.0
 	github.com/tink-crypto/tink-go/v2 v2.8.0
 	github.com/tsaarni/certyaml v0.13.0
 	github.com/yeqown/go-qrcode/v2 v2.3.0
@@ -348,3 +349,5 @@ require (
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 )
+
+replace github.com/hashicorp/go-secure-stdlib/mlock => ./wasm/third_party/mlock

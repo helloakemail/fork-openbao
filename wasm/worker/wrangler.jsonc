@@ -1,0 +1,27 @@
+{
+  // Experimental: OpenBao core on Cloudflare Workers. See wasm/README.md.
+  "name": "openbao-worker",
+  "main": "./build/worker.mjs",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "build": {
+    "command": "npm run build"
+  },
+  // Paid plan only: OpenBao's unseal + request handling needs more than the
+  // free plan's 10 ms of CPU per request.
+  "limits": { "cpu_ms": 30000 },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      // wrangler hyperdrive create openbao --connection-string="postgres://..."
+      "id": "<hyperdrive-id>"
+    }
+  ],
+  "vars": {
+    "BAO_LOG_LEVEL": "info",
+    "BAO_API_ADDR": "https://openbao-worker.<account>.workers.dev"
+  }
+  // Secrets (wrangler secret put):
+  //   BAO_STATIC_SEAL_CURRENT_KEY     32-byte key, hex or base64
+  //   BAO_STATIC_SEAL_CURRENT_KEY_ID  any identifier, e.g. "v1"
+}
