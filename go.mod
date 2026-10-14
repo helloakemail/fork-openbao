@@ -351,3 +351,5 @@ require (
 )
 
 replace github.com/hashicorp/go-secure-stdlib/mlock => ./wasm/third_party/mlock
+
+replace github.com/syumai/workers-go => ./wasm/third_party/workers-go

@@ -29,4 +29,4 @@ GZ=$(gzip -9 -c "$OUT" | wc -c)
 SHA=$(git rev-parse --short HEAD)
 printf '%s,%s,"%s",%s,%s,%s\n' "$(date -u +%FT%TZ)" "$SHA" "$TAGS" "$RAW" "$OPTB" "$GZ" >> wasm/harness/results.csv
 printf 'raw %.1f MB  opt %.1f MB  gzip %.1f MB  (limit 67.1 MB; over by %.1f MB)\n' \
-  "$(echo "$RAW/1e6" | bc -l)" "$(echo "$OPTB/1e6" | bc -l)" "$(echo "$GZ/1e6" | bc -l)" "$(echo "($OPTB-67108864)/1e6" | bc -l)"
+  "$(echo "$RAW/1000000" | bc -l)" "$(echo "$OPTB/1000000" | bc -l)" "$(echo "$GZ/1000000" | bc -l)" "$(echo "($OPTB-67108864)/1000000" | bc -l)"

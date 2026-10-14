@@ -26,6 +26,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"runtime/pprof"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -395,6 +396,12 @@ func (s *server) serveDebug(w http.ResponseWriter, r *http.Request) {
 			bgState.Store("done")
 		}()
 		w.Write([]byte("started\n"))
+	case "/_worker/heap":
+		// pprof heap profile (inuse after a forced GC); analyse natively with
+		// `go tool pprof -sample_index=inuse_space -top heap.pb.gz`.
+		runtime.GC()
+		w.Header().Set("Content-Type", "application/octet-stream")
+		pprof.Lookup("heap").WriteTo(w, 0)
 	case "/_worker/goroutines":
 		// Histogram of goroutines by their top non-runtime frame, to spot leaks.
 		buf := make([]byte, 1<<22)
