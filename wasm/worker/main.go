@@ -34,6 +34,7 @@ import (
 	"time"
 
 	log "github.com/hashicorp/go-hclog"
+	metrics "github.com/hashicorp/go-metrics/compat"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	wrapping "github.com/openbao/go-kms-wrapping/v2"
@@ -46,6 +47,7 @@ import (
 	logicalKv "github.com/openbao/openbao/v2/internal/builtin/logical/kv"
 	"github.com/openbao/openbao/v2/internal/builtin/plugin"
 	"github.com/openbao/openbao/v2/internal/helper/configutil"
+	"github.com/openbao/openbao/v2/internal/helper/metricsutil"
 	vaulthttp "github.com/openbao/openbao/v2/internal/http"
 	"github.com/openbao/openbao/v2/internal/physical/postgresql"
 	"github.com/openbao/openbao/v2/internal/vault"
@@ -189,6 +191,9 @@ func (s *server) ensureCore(ctx context.Context) error {
 		},
 		BuiltinRegistry:  pluginRegistry,
 		DisableSSCTokens: true,
+		// sys/metrics dereferences the helper unconditionally; give it an
+		// in-memory sink (no Prometheus on this build).
+		MetricsHelper: metricsutil.NewMetricsHelper(metrics.NewInmemSink(10*time.Second, time.Minute), false),
 	}
 
 	core, err := vault.NewCore(coreConfig)
