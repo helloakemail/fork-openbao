@@ -2,6 +2,8 @@
 // Copyright (c) 2025 OpenBao a Series of LF Projects, LLC
 // SPDX-License-Identifier: MPL-2.0
 
+//go:build !js
+
 package oci
 
 import (
@@ -25,11 +27,6 @@ import (
 	"github.com/openbao/openbao/v2/internal/command/server"
 	"github.com/openbao/openbao/v2/internal/helper/osutil"
 	"github.com/shirou/gopsutil/v4/disk"
-)
-
-const (
-	PluginCacheDir     = ".oci-cache"
-	PluginMaxSizeBytes = 512 * 1024 * 1024 // 512 MB
 )
 
 // PluginDownloader handles downloading and managing OCI-based plugins.
