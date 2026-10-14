@@ -5,15 +5,15 @@ with the standard Go toolchain (`GOOS=js GOARCH=wasm`) and run it inside a
 Cloudflare Worker, stateless, with PostgreSQL (through Hyperdrive) as the
 only storage backend and the `static` seal for hands-off auto-unseal.
 
-Status: **it runs.** Under workerd (`wrangler dev`) against PostgreSQL, the core
-initialises, auto-unseals from the static seal, and passes a black-box API
-suite covering kv, policies and tokens, userpass, AppRole, JWT, transit, PKI,
-the database engine and TTL expiry, three runs in a row, with flat memory
-(67 MB of linear memory, 128 MB limit). Size after the first round of feature
-removals is 67.2 MB after wasm-opt against Cloudflare's 64 MiB (67.1 MB)
-uncompressed limit: 48 KB over, with the grpc/go-plugin removal still in
-progress. Nothing has been deployed to Cloudflare itself yet.
-Everything below is measured in this tree unless marked as an estimate.
+Status: **it runs and it fits.** Under workerd (`wrangler dev`) against
+PostgreSQL, the core initialises, auto-unseals from the static seal, and
+passes a black-box API suite covering kv, policies and tokens, userpass,
+AppRole, JWT, transit, PKI, the database engine and TTL expiry, on repeated
+runs, with flat memory (47 MB of linear memory against a 128 MB limit). After
+three rounds of feature removal the module is **60.3 MB after wasm-opt**,
+6.9 MB under Cloudflare's 64 MiB (67.1 MB) uncompressed limit. Nothing has
+been deployed to Cloudflare itself yet. Everything below is measured in this
+tree unless marked as an estimate.
 
 ## Layout
 
@@ -39,6 +39,30 @@ builds unchanged):
 - `internal/helper/configutil/telemetry_stackdriver*.go`: the Google Cloud Monitoring sink split out and excluded on js.
 - `internal/physical/postgresql/testing.go`: tagged `!js` (it is a non-test file that imports the Docker test helpers).
 - `sdk/database/helper/connutil`: an `OpenHook` so the Worker can route the database engine's own `sql.Open("pgx", …)` through Cloudflare sockets. Nil on native builds.
+
+### What the js/wasm build leaves out
+
+Everything is a `//go:build !js` split with a `_js.go` stub that returns a
+clear "not supported on this build" error; native builds are unchanged.
+
+| Feature | Why it cannot or need not run in a Worker |
+|---|---|
+| Raft storage, pebble, bbolt, raft auto-join (go-discover) | needs local disk; storage is PostgreSQL |
+| Kubernetes, RabbitMQ, Cassandra, InfluxDB, MySQL, Valkey plugins (`baolean`) | cloud and cluster SDKs; add back per deployment |
+| CEL roles in JWT auth and PKI, CEL profile sources | cel-go and its ANTLR parser; classic roles remain |
+| Google Workspace groups provider in JWT/OIDC auth | drags in the Google API client, s2a and otel; other providers remain |
+| Listener ACME auto-TLS | Cloudflare terminates TLS |
+| OCI plugin download, external plugin processes, KMS plugin catalog, HA request forwarding | no subprocesses, no cluster port |
+| KMIP and transit seal wrappers | only the static seal (and shamir) are used |
+| Okta, Duo and PingID login MFA | TOTP MFA remains |
+| Prometheus, Datadog, Circonus telemetry sinks | the in-memory sink serves `sys/metrics` |
+| PGP-wrapped init and rekey keys | small feature, 2.6 MB of crypto libraries |
+| Test helpers that were linked into the production binary | never belonged there |
+
+Still present and accounted for: 8 small `grpc` leaf packages (`codes`,
+`status`) that builtin database plugins use for error codes, the protobuf
+runtime (generated message types throughout the SDK), and testify (imported
+by non-test code in `hashicorp/cap`).
 
 ## Build
 
@@ -123,6 +147,7 @@ reads `WebAssembly.Memory.buffer.byteLength` directly.
 | Go started, no core | 54.5 MB | 2 MB |
 | Core built, unsealed | 63 MB | 4 MB |
 | After the full acceptance suite, run 1 / 2 / 3 | 66.6 / 67.1 / 67.1 MB | 5.3 / 5.5 / 5.6 MB |
+| Same, after all size removals (data segment shrank with the code) | 46.7 MB | 4.5 MB |
 | Before the workers-go leak fix, runs 1 / 2 / 3 | 71 / 78 / 83 MB | 8.3 / 10.7 / 13.4 MB |
 
 Goroutines sit at 523: 500 are the expiration manager's fair-share workers,
@@ -141,7 +166,8 @@ All with Go 1.27.0, `-ldflags="-s -w"`.
 | Worker wasm, `baolean` + go-discover excluded | 106 MB | 20 MB |
 | Same, after `wasm-opt -Oz` (binaryen 123, 3.5 min, 7.5 CPU-min) | 93 MB | 20 MB |
 | + CEL engine and Google Workspace provider excluded | 89.3 MB raw | |
-| + ACME listener TLS, OCI download, KMIP seal, Okta/Duo/PingID MFA, Prometheus/Datadog/Circonus sinks, test helpers, PGP excluded (current tree) | 75.8 MB raw / **67.2 MB opt** | 14.8 MB |
+| + ACME listener TLS, OCI download, KMIP seal, Okta/Duo/PingID MFA, Prometheus/Datadog/Circonus sinks, test helpers, PGP excluded | 75.8 MB raw / 67.2 MB opt | 14.8 MB |
+| + external plugin runner (go-plugin, yamux), KMS plugin catalog, HA request forwarding excluded (current tree) | 67.7 MB raw / **60.3 MB opt** | 13.4 MB |
 | **Cloudflare limit (uncompressed, Free and Paid)** | **64 MiB = 67 MB** | no compressed limit |
 
 Section breakdown of the 204 MB build: code 115 MB, data 88 MB (Go's
