@@ -5,10 +5,14 @@ with the standard Go toolchain (`GOOS=js GOARCH=wasm`) and run it inside a
 Cloudflare Worker, stateless, with PostgreSQL (through Hyperdrive) as the
 only storage backend and the `static` seal for hands-off auto-unseal.
 
-Status in one line: **it compiles and links, the Worker entrypoint is written,
-but the binary is still ~1.6x over Cloudflare's 64 MiB uncompressed size limit
-and nothing has been executed on Cloudflare yet.** Everything below is
-measured in this tree unless marked as an estimate.
+Status: **it runs.** Under workerd (`wrangler dev`) against PostgreSQL, the core
+initialises, auto-unseals from the static seal, and passes a black-box API
+suite covering kv, policies and tokens, userpass, AppRole, JWT, transit, PKI,
+the database engine and TTL expiry, three runs in a row, with flat memory
+(67 MB of linear memory, 128 MB limit). The remaining blocker is size: 93 MB
+after wasm-opt against Cloudflare's 64 MiB uncompressed limit, with feature
+removals in progress. Nothing has been deployed to Cloudflare itself yet.
+Everything below is measured in this tree unless marked as an estimate.
 
 ## Layout
 
@@ -16,9 +20,13 @@ measured in this tree unless marked as an estimate.
 |---|---|
 | `worker/main.go` | Worker entrypoint: builds the PostgreSQL backend over Cloudflare TCP sockets, the static auto-seal, `vault.NewCore`, and serves OpenBao's regular `http.Handler` through `workers-go`. |
 | `worker/registry_full.go`, `worker/registry_lean.go` | Builtin plugin registry. Default is the full OpenBao set; `-tags baolean` swaps in a reduced set (approle, cert, jwt/oidc, userpass; kv, pki, ssh, totp, transit; postgresql database plugin). |
-| `worker/loader/worker.mjs` | JS loader. Modified from the `workers-go` generated one so a Go instance is started **once per isolate** instead of once per request. |
+| `worker/loader/worker.mjs` | JS loader: a Durable Object class (`OpenBaoCore`) hosting **one long-lived Go instance**, plus a stateless Worker that forwards every request to the single object. |
+| `acceptance/` | Black-box API suite (`go test -tags acceptance`) that runs against any `BAO_ADDR`: native binary or the Worker. |
+| `harness/` | `build.sh` (wasm build + wasm-opt + size log), `workerd.sh` (wrangler dev), `memprobe.sh`, `reset-db.sh`, native baseline server config. |
+| `third_party/workers-go` | Vendored `syumai/workers-go` v0.36.0 with the `js.Func` leaks fixed (see below); wired in with a `replace`. |
 | `worker/wrangler.jsonc`, `worker/package.json` | Wrangler config and build script. |
 | `sizeprobe/` | Native twin of the worker used to attribute binary size per package (`go tool nm` cannot read Go wasm). |
+| `go_js_wasm_exec_clean` | `go test -exec` wrapper so js/wasm test binaries run under Node despite a large environment. |
 | `third_party/mlock` | Verbatim copy of `hashicorp/go-secure-stdlib/mlock` with `js`/`wasip1` added to the "unavailable" build tags; wired in with a `replace` in the root `go.mod`. |
 
 Changes outside this directory (all behind `//go:build js` / `!js`, native
@@ -29,6 +37,7 @@ builds unchanged):
 - `internal/vault/raft_discover*.go`: `hashicorp/go-discover` (raft auto-join) moved behind a one-method interface and excluded on js. This alone halves the wasm.
 - `internal/helper/configutil/telemetry_stackdriver*.go`: the Google Cloud Monitoring sink split out and excluded on js.
 - `internal/physical/postgresql/testing.go`: tagged `!js` (it is a non-test file that imports the Docker test helpers).
+- `sdk/database/helper/connutil`: an `OpenHook` so the Worker can route the database engine's own `sql.Open("pgx", …)` through Cloudflare sockets. Nil on native builds.
 
 ## Build
 
@@ -47,36 +56,77 @@ npm run build
 to the maintained `hashicorp/go-metrics`, which has a `js` constant file; the
 legacy `armon/go-metrics` references `syscall.SIGUSR1` and does not compile.
 
-## How the Worker is wired
+## How it is wired
 
-1. **Lifecycle.** A Worker cannot open sockets or read bindings in global
-   scope, so `main()` only registers the handler. On the first request the
-   handler builds the backend, seal and core, then auto-unseals if storage is
-   already initialised. First boot of a fresh database is done by calling
-   `POST /v1/sys/init` as usual; with an auto-seal the root key is stored in
-   PostgreSQL wrapped by the static key, so every later cold start unseals
-   itself.
-2. **PostgreSQL.** `pgx.ParseConfig` on the Hyperdrive binding's
-   `connectionString` (or `BAO_PG_CONNECTION_URL`), with `DialFunc`
-   replaced by `workers-go/cloudflare/sockets.Connect` (Cloudflare's
-   `connect()` API) and `LookupFunc` short-circuited because there is no DNS
-   resolver in the sandbox. The config is registered with
-   `stdlib.RegisterConnConfig` so OpenBao's unmodified PostgreSQL backend
-   can `sql.Open("pgx", name)` it. `max_idle_connections` defaults to 0
-   because Cloudflare closes sockets when the request that opened them ends.
-   Hyperdrive lists `rust-postgres` (a raw-socket client) as supported, so a
-   Go client over `connect()` is expected to work, but this is unverified.
-3. **Seal.** `go-kms-wrapping/wrappers/static` with the key from the
-   `BAO_STATIC_SEAL_CURRENT_KEY` Worker secret, wrapped in `vault.NewAutoSeal`.
-4. **Core config.** `DisableCache: true` (several isolates may serve the same
-   database concurrently with no leader election, so an in-memory cache can
-   be stale), no HA backend, `DisableSSCTokens: true`, only the `http` audit
-   backend (file/syslog/socket cannot work in a Worker).
-5. **Loader.** `workers-go` instantiates a new Go program per request. That
-   is fine for a hello-world but would redo unseal and mount setup (dozens of
-   PostgreSQL round-trips) on every request, so `loader/worker.mjs` starts
-   Go once per isolate and reuses it. The core then lives as long as
-   Cloudflare keeps the isolate alive.
+1. **A Durable Object hosts the core.** A plain Worker cannot: every socket
+   and timer belongs to the request that created it, so OpenBao's background
+   goroutines (kv v2's post-mount upgrade, lease expiry, the rollback
+   manager) stall the moment their request returns. The `/_worker/bg`
+   experiment shows a goroutine stuck at "dialing" forever in Worker mode and
+   finishing in under a second inside a Durable Object, whose context lives
+   on while outbound sockets are open (up to 15 minutes per socket, per the
+   June 2026 changelog). A single object (`idFromName("singleton")`) also
+   gives single-writer semantics for free.
+2. **Lifecycle.** The object starts the Go program once (`ServeNonBlock`,
+   `Ready`, then block forever) and keeps it. The core is built lazily on
+   the first request, since bindings and sockets are only reachable from a
+   request context, and auto-unseals when storage is already initialised.
+   First boot of a fresh database is `POST /v1/sys/init` as usual; the root
+   key is stored wrapped by the static key, so later cold starts unseal
+   themselves.
+3. **PostgreSQL.** `pgx.ParseConfig` on the Hyperdrive binding's
+   `connectionString` (or `BAO_PG_CONNECTION_URL`) with `DialFunc` routed to
+   `cloudflare:sockets` `connect()` and `LookupFunc` short-circuited (no DNS
+   in the sandbox). The config is registered with `stdlib.RegisterConnConfig`
+   so OpenBao's unmodified backend can `sql.Open("pgx", name)` it. The
+   database secrets engine's plugin goes through the same path via
+   `connutil.OpenHook`. Locally, wrangler's Hyperdrive emulation hands the
+   Worker `postgres://…@<id>.hyperdrive.local:5432/…`, and a raw-socket probe
+   confirmed Postgres answers on it.
+4. **Seal and core config.** `go-kms-wrapping/wrappers/static` from the
+   `BAO_STATIC_SEAL_CURRENT_KEY` secret in `vault.NewAutoSeal`;
+   `DisableCache: true`, no HA backend, `DisableSSCTokens: true`, only the
+   `http` audit backend.
+5. **Worker-specific fixes.** workers-go leaves `Request.Body` nil on
+   body-less requests where net/http guarantees `http.NoBody`; the handler
+   normalises it. The vendored workers-go releases the `js.Func` callbacks
+   it allocated per promise await, per stream read and per response body;
+   with one long-lived instance those leaked about 1 MB per kv mount cycle.
+6. **Debug routes** (only with `BAO_WORKER_DEBUG` set): `/_worker/mem`
+   (linear memory and Go `MemStats`), `/_worker/heap` (pprof),
+   `/_worker/goroutines` (histogram), `/_worker/pgping`, `/_worker/bg`.
+
+## Running it locally
+
+```sh
+wasm/harness/build.sh                 # wasm + wasm-opt into wasm/worker/build (add --no-opt while iterating)
+cp wasm/worker/loader/worker.mjs wasm/worker/build/worker.mjs
+wasm/harness/workerd.sh start         # wrangler dev on :8787, local Postgres via Hyperdrive's localConnectionString
+BAO_ADDR=http://127.0.0.1:8787 BAO_ACCEPT_PG_URL='postgres://bao:bao@127.0.0.1:5432/bao?sslmode=disable' \
+  go test -tags acceptance -count=1 -v ./wasm/acceptance
+wasm/harness/memprobe.sh              # linear / sys / heap in MB
+```
+
+`wasm/worker/.dev.vars` (not committed) holds the static seal key for local
+dev; `wasm/harness/native-server.sh` runs the native binary with the same
+storage and seal for baselining the suite.
+
+## Measured memory
+
+Linear memory is what counts against the 128 MB isolate limit (plus the JS
+heap). Go's `MemStats.Sys` excludes the 44.5 MB data segment, so the probe
+reads `WebAssembly.Memory.buffer.byteLength` directly.
+
+| Point | Linear memory | Go heap after GC |
+|---|---|---|
+| Go started, no core | 54.5 MB | 2 MB |
+| Core built, unsealed | 63 MB | 4 MB |
+| After the full acceptance suite, run 1 / 2 / 3 | 66.6 / 67.1 / 67.1 MB | 5.3 / 5.5 / 5.6 MB |
+| Before the workers-go leak fix, runs 1 / 2 / 3 | 71 / 78 / 83 MB | 8.3 / 10.7 / 13.4 MB |
+
+Goroutines sit at 523: 500 are the expiration manager's fair-share workers,
+a tunable. The data segment shrinks with every size removal, so memory is
+not the limiting resource.
 
 ## Measured sizes
 
@@ -87,8 +137,8 @@ All with Go 1.27.0, `-ldflags="-s -w"`.
 | Native linux/amd64, full CLI | 127 MB | |
 | Worker wasm, full plugin registry | 224 MB | 35 MB |
 | Worker wasm, `baolean` registry | 204 MB | 33 MB |
-| Worker wasm, `baolean` + go-discover excluded (current tree) | **106 MB** | 20 MB |
-| Same, after `wasm-opt -Oz` (binaryen 123, 3.5 min, 7.5 CPU-min) | 93 MB | 20 MB |
+| Worker wasm, `baolean` + go-discover excluded | 106 MB | 20 MB |
+| Same, after `wasm-opt -Oz` (binaryen 123, 3.5 min, 7.5 CPU-min) (current tree) | **93 MB** | 20 MB |
 | **Cloudflare limit (uncompressed, Free and Paid)** | **64 MiB = 67 MB** | no compressed limit |
 
 Section breakdown of the 204 MB build: code 115 MB, data 88 MB (Go's
@@ -139,34 +189,22 @@ dependencies.
 
 ## Other constraints found (not size)
 
-- **Runtime instantiation.** With the stock `workers-go` loader every
-  request re-runs `main()`, unseal and mount setup. The custom loader fixes
-  that but the first request on each new isolate still pays a full cold
-  start: Go runtime init of a ~100 MB module plus unseal (barrier keyring,
-  mount table, policies, token store, audit setup) over the network to
-  PostgreSQL. Expect seconds, not milliseconds; it counts against the 30 s
-  default CPU limit only for the CPU part.
-- **Memory.** Isolates get 128 MB. Go's wasm linear memory has to hold the
-  data section (≈ 45 MB at the current size) plus the heap. Not measured.
-- **Background work.** OpenBao relies on long-running goroutines
-  (expiration manager, rollback manager, periodic funcs, lease revocation).
-  Workers run no code between requests and may be evicted any time, so lease
-  expiry and tidy work must be driven externally, e.g. a Cron Trigger that
-  hits an endpoint. Not implemented.
-- **Concurrency and consistency.** No HA, no leader election: every isolate
-  believes it is the active node. The PostgreSQL backend's transactions keep
-  individual operations consistent, and `DisableCache` avoids stale reads,
-  but concurrent isolates mutating shared state (mount table, policies,
-  rotations) is a mode OpenBao was not designed for.
-- **Sockets.** One socket per request lifetime, six simultaneous outbound
-  connections per Worker, DNS only via `connect()`. TLS to a non-Hyperdrive
-  database would be pure-Go `crypto/tls` inside wasm.
+- **Cold start.** workerd compiles the 93 MB module on first load (8 to 25 s
+  observed locally; Cloudflare precompiles at deploy time) and the first
+  request then builds the core and unseals (about 1.8 s against local
+  Postgres). Later requests are tens of milliseconds.
+- **Connections.** Every storage operation currently dials a new socket
+  (`max_idle_connections=0`, chosen for plain-Worker semantics). Inside the
+  Durable Object sockets persist, so a small idle pool is the next
+  optimisation.
+- **Concurrency.** One Durable Object instance serialises everything, which
+  matches OpenBao's single-active-node model but caps throughput at that one
+  object; it also lives in one location.
 - **Wall clock.** Workers only advance `Date.now()` on I/O, so `time.Now()`
-  is coarse inside a request. Token TTL math still works; timing-based
-  code paths are less predictable.
-- **Nothing is tested on Cloudflare.** No account or `wrangler` in this
-  environment; the loader, bindings and Hyperdrive dial path are written
-  against the documented APIs only.
+  is coarse inside a request.
+- **Not yet exercised on Cloudflare itself.** workerd locally does not
+  enforce the 128 MB memory limit or the CPU limit; the numbers above come
+  from the Worker's own reporting.
 
 ## Practical alternatives
 
