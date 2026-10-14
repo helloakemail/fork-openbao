@@ -88,7 +88,7 @@ All with Go 1.27.0, `-ldflags="-s -w"`.
 | Worker wasm, full plugin registry | 224 MB | 35 MB |
 | Worker wasm, `baolean` registry | 204 MB | 33 MB |
 | Worker wasm, `baolean` + go-discover excluded (current tree) | **106 MB** | 20 MB |
-| Same, after `wasm-opt -Oz` (binaryen 123) | not yet measured | |
+| Same, after `wasm-opt -Oz` (binaryen 123, 3.5 min, 7.5 CPU-min) | 93 MB | 20 MB |
 | **Cloudflare limit (uncompressed, Free and Paid)** | **64 MiB = 67 MB** | no compressed limit |
 
 Section breakdown of the 204 MB build: code 115 MB, data 88 MB (Go's
@@ -132,7 +132,7 @@ has to go on top of the current 24.8 MB. There is no dependency left that
 large; the candidates are OpenBao features: CEL roles (~1.5 MB), external
 plugin support and request forwarding (grpc/go-plugin, ~2 MB), the Okta and
 Google MFA/group integrations (~0.8 MB), the KMIP seal client (~1 MB), plus
-whatever `wasm-opt -Oz` recovers (typically 10–15% on Go output). The
+the 13% that `wasm-opt -Oz` recovers (106 MB to 93 MB, measured). The
 estimate therefore says a "core-only" OpenBao lands around the limit, not
 comfortably under it, and only after removing features, not just
 dependencies.
