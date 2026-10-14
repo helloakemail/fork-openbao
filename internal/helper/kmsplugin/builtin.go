@@ -9,9 +9,6 @@ import (
 	kmstransit "github.com/openbao/go-kms-wrapping/kms/transit/v2"
 	wrapping "github.com/openbao/go-kms-wrapping/v2"
 	"github.com/openbao/go-kms-wrapping/v2/kms"
-	"github.com/openbao/go-kms-wrapping/wrappers/kmip/v2"
-	"github.com/openbao/go-kms-wrapping/wrappers/static/v2"
-	"github.com/openbao/go-kms-wrapping/wrappers/transit/v2"
 	"github.com/openbao/openbao/sdk/v2/helper/consts"
 	"github.com/openbao/openbao/v2/internal/command/server"
 )
@@ -25,11 +22,8 @@ var builtinKMSes = map[string]func() kms.KMS{
 	"transit": kmstransit.New,
 }
 
-var builtinWrappers = map[wrapping.WrapperType]func() wrapping.Wrapper{
-	kmip.Type:    toWrapper(kmip.NewWrapper),
-	static.Type:  toWrapper(static.NewWrapper),
-	transit.Type: toWrapper(transit.NewWrapper),
-}
+// builtinWrappers lives in wrapper_builtin.go (native) and
+// wrapper_builtin_js.go (js/wasm: static only).
 
 // toWrapper is a hack to go from func() <concrete wrapper type> to func()
 // wrapping.Wrapper, as constructors in go-kms-wrapping tend to return the
