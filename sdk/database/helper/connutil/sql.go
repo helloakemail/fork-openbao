@@ -22,6 +22,11 @@ import (
 var _ ConnectionProducer = &SQLConnectionProducer{}
 
 // SQLConnectionProducer implements ConnectionProducer and provides a generic producer for most sql databases
+// OpenHook, when set, is called before every sql.Open with the driver name and
+// DSN and may return replacements. It exists for builds whose network stack
+// is not the Go one (the js/wasm Cloudflare Worker build) and is nil otherwise.
+var OpenHook func(driver, dsn string) (string, string, error)
+
 type SQLConnectionProducer struct {
 	ConnectionURL            string `json:"connection_url" mapstructure:"connection_url" structs:"connection_url"`
 	MaxOpenConnections       int    `json:"max_open_connections" mapstructure:"max_open_connections" structs:"max_open_connections"`
@@ -159,6 +164,14 @@ func (c *SQLConnectionProducer) Connection(ctx context.Context) (any, error) {
 	}
 
 	var err error
+	if OpenHook != nil {
+		// Lets an embedding program (the js/wasm Worker build) rewrite the
+		// driver name or DSN, e.g. to route dialing through a custom socket API.
+		dbType, conn, err = OpenHook(dbType, conn)
+		if err != nil {
+			return nil, err
+		}
+	}
 	c.db, err = sql.Open(dbType, conn)
 	if err != nil {
 		return nil, err

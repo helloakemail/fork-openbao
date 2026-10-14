@@ -11,6 +11,10 @@
   // free plan's 10 ms of CPU per request.
   "limits": { "cpu_ms": 30000 },
   "dev": { "port": 8787, "local_protocol": "http" },
+  "durable_objects": {
+    "bindings": [{ "name": "OPENBAO", "class_name": "OpenBaoCore" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["OpenBaoCore"] }],
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",

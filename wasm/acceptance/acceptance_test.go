@@ -95,6 +95,12 @@ func TestKV(t *testing.T) {
 	_ = c.Sys().Unmount(mount)
 	require.NoError(t, c.Sys().Mount(mount, &api.MountInput{Type: "kv", Options: map[string]string{"version": "2"}}))
 	kv := c.KVv2(mount)
+	// kv v2 upgrades its storage layout in the background right after
+	// mounting and rejects writes until that is done.
+	require.Eventually(t, func() bool {
+		_, err := kv.Put(t.Context(), "app/ready", map[string]any{"ok": true})
+		return err == nil
+	}, 60*time.Second, 250*time.Millisecond, "kv v2 mount did not finish upgrading")
 	for i := 0; i < 20; i++ {
 		_, err := kv.Put(t.Context(), fmt.Sprintf("app/s%d", i), map[string]any{"k": fmt.Sprintf("v%d", i), "n": i})
 		require.NoError(t, err)
@@ -109,7 +115,7 @@ func TestKV(t *testing.T) {
 	require.Equal(t, "v7", v1.Data["k"])
 	list, err := c.Logical().List(mount + "/metadata/app")
 	require.NoError(t, err)
-	require.Len(t, list.Data["keys"], 20)
+	require.Len(t, list.Data["keys"], 21)
 	require.NoError(t, kv.Delete(t.Context(), "app/s7"))
 	s, err = kv.Get(t.Context(), "app/s7")
 	if err == nil {

@@ -28,6 +28,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall/js"
 	"time"
 
@@ -36,6 +37,7 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	wrapping "github.com/openbao/go-kms-wrapping/v2"
 	static "github.com/openbao/go-kms-wrapping/wrappers/static/v2"
+	"github.com/openbao/openbao/sdk/v2/database/helper/connutil"
 	"github.com/openbao/openbao/sdk/v2/logical"
 	"github.com/openbao/openbao/v2/internal/audit"
 	auditHttp "github.com/openbao/openbao/v2/internal/builtin/audit/http"
@@ -66,15 +68,31 @@ const (
 	envAPIAddr           = "BAO_API_ADDR"
 )
 
+var bgState = func() *atomic.Value { v := &atomic.Value{}; v.Store("idle"); return v }()
+
 type server struct {
-	mu      sync.Mutex
-	core    *vault.Core
-	handler http.Handler
-	logger  log.Logger
+	mu         sync.Mutex
+	runtimeCtx context.Context // first request's context, carries the workers-go runtime context
+	core       *vault.Core
+	handler    http.Handler
+	logger     log.Logger
 }
 
 func main() {
 	s := &server{}
+	// Database secrets engine plugins open their own connections; route the
+	// PostgreSQL plugin through Cloudflare sockets as well.
+	connutil.OpenHook = func(driver, dsn string) (string, string, error) {
+		if driver != "pgx" {
+			return driver, dsn, fmt.Errorf("database driver %q is not supported on the Worker build", driver)
+		}
+		cfg, err := pgx.ParseConfig(dsn)
+		if err != nil {
+			return "", "", err
+		}
+		applyWorkerDialer(cfg, s.dialCtx())
+		return "pgx", stdlib.RegisterConnConfig(cfg), nil
+	}
 	// workers.Serve would return (and the Go program exit) as soon as the first
 	// response body is closed. The loader keeps one Go instance per isolate,
 	// so register the handler, signal readiness and then block forever.
@@ -126,6 +144,7 @@ func (s *server) ensureCore(ctx context.Context) error {
 	if s.core != nil {
 		return nil
 	}
+	s.runtimeCtx = context.WithoutCancel(ctx)
 
 	level := cloudflare.Getenv(envLogLevel)
 	if level == "" {
@@ -242,23 +261,36 @@ func pgxConfig(ctx context.Context) (*pgx.ConnConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing connection url: %w", err)
 	}
+	applyWorkerDialer(cfg, ctx)
+	return cfg, nil
+}
+
+// applyWorkerDialer makes a pgx config dial through Cloudflare's connect()
+// API. dialCtx must carry the workers-go runtime context (any request
+// context does); connect() is unreachable from a plain context.
+func applyWorkerDialer(cfg *pgx.ConnConfig, dialCtx context.Context) {
 	// Workers have no DNS resolver available to Go; connect() resolves names
 	// itself (and recognises Hyperdrive hosts).
 	cfg.LookupFunc = func(_ context.Context, host string) ([]string, error) {
 		return []string{host}, nil
 	}
-	// connect() is only reachable through a request-scoped runtime context,
-	// so dial with the context of the request that built the core rather
-	// than whatever context database/sql hands us later.
-	dialCtx := ctx
 	cfg.DialFunc = func(_ context.Context, network, addr string) (net.Conn, error) {
 		return sockets.Connect(dialCtx, addr, &sockets.SocketOptions{
 			SecureTransport: sockets.SecureTransportOff,
 		})
 	}
 	cfg.ConnectTimeout = 10 * time.Second
+}
 
-	return cfg, nil
+// dialCtx returns a context that carries the runtime context captured from the
+// request that built the core; it is only valid once ensureCore has run.
+func (s *server) dialCtx() context.Context {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.runtimeCtx == nil {
+		return context.Background()
+	}
+	return s.runtimeCtx
 }
 
 func consoleError(msg string) {
@@ -329,6 +361,58 @@ func (s *server) serveDebug(w http.ResponseWriter, r *http.Request) {
 			out["error"] = err.Error()
 		}
 		json.NewEncoder(w).Encode(out)
+	case "/_worker/bg":
+		// Experiment: does a goroutine that performs socket I/O after this
+		// request has returned still make progress? Start it, return at once,
+		// then poll /_worker/bg?status=1.
+		if r.URL.Query().Get("status") != "" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"bg": bgState.Load()})
+			return
+		}
+		bgState.Store("started")
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			bgState.Store("slept")
+			cfg, err := pgxConfig(s.dialCtx())
+			if err != nil {
+				bgState.Store("config error: " + err.Error())
+				return
+			}
+			bgState.Store("dialing")
+			conn, err := pgx.ConnectConfig(context.Background(), cfg)
+			if err != nil {
+				bgState.Store("dial error: " + err.Error())
+				return
+			}
+			bgState.Store("connected")
+			var one int
+			if err := conn.QueryRow(context.Background(), "select 1").Scan(&one); err != nil {
+				bgState.Store("query error: " + err.Error())
+				return
+			}
+			conn.Close(context.Background())
+			bgState.Store("done")
+		}()
+		w.Write([]byte("started\n"))
+	case "/_worker/goroutines":
+		// Histogram of goroutines by their top non-runtime frame, to spot leaks.
+		buf := make([]byte, 1<<22)
+		n := runtime.Stack(buf, true)
+		counts := map[string]int{}
+		for _, g := range strings.Split(string(buf[:n]), "\n\n") {
+			lines := strings.Split(g, "\n")
+			top := "?"
+			for i := 1; i+1 < len(lines); i += 2 {
+				if !strings.HasPrefix(lines[i], "runtime.") && !strings.HasPrefix(lines[i], "sync.") && !strings.HasPrefix(lines[i], "syscall/js.") {
+					top = lines[i]
+					break
+				}
+			}
+			counts[top]++
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"total": runtime.NumGoroutine(), "by_frame": counts})
 	case "/_worker/mem":
 		if r.URL.Query().Get("gc") != "" {
 			runtime.GC()
