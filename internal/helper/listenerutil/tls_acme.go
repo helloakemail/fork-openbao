@@ -1,6 +1,8 @@
 // Copyright (c) 2024 OpenBao a Series of LF Projects, LLC
 // SPDX-License-Identifier: MPL-2.0
 
+//go:build !js
+
 package listenerutil
 
 import (
@@ -17,10 +19,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/hashicorp/cli"
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/go-hclog"
-	"github.com/hashicorp/go-secure-stdlib/reloadutil"
 	"github.com/mholt/acmez/v3/acme"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -30,11 +29,6 @@ import (
 )
 
 const varFallback = "/var/lib/openbao/certmagic"
-
-type ReloadableCertGetter interface {
-	Reload() error
-	GetCertificate(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error)
-}
 
 type ACMECertGetter struct {
 	Listener *configutil.Listener
@@ -55,34 +49,9 @@ func (cg *ACMECertGetter) Close() error {
 	return nil
 }
 
-func NewCertificateGetter(l *configutil.Listener, ui cli.Ui, logger hclog.Logger) (ReloadableCertGetter, error) {
-	// Assume a validated listener here. Prefer the certificate if is set
-	// by path in the listener configuration, otherwise do ACME certificate
-	// acquisition.
-	if l.TLSCertFile != "" {
-		cg := reloadutil.NewCertificateGetter(l.TLSCertFile, l.TLSKeyFile, "")
-		if err := cg.Reload(); err != nil {
-			// We try the key without a passphrase first and if we get an incorrect
-			// passphrase response, try again after prompting for a passphrase
-			if errwrap.Contains(err, x509.IncorrectPasswordError.Error()) {
-				var passphrase string
-				passphrase, err = ui.AskSecret(fmt.Sprintf("Enter passphrase for %s:", l.TLSKeyFile))
-				if err == nil {
-					cg = reloadutil.NewCertificateGetter(l.TLSCertFile, l.TLSKeyFile, passphrase)
-					if err = cg.Reload(); err == nil {
-						return cg, nil
-					}
-
-					return nil, fmt.Errorf("error loading TLS cert with password: %w", err)
-				}
-			}
-
-			return nil, fmt.Errorf("error loading TLS cert: %w", err)
-		}
-
-		return cg, nil
-	}
-
+// newACMECertGetter builds the ACME (certmagic) certificate getter used when
+// a listener has no tls_cert_file.
+func newACMECertGetter(l *configutil.Listener, logger hclog.Logger) (ReloadableCertGetter, error) {
 	core := &zapHclCore{Logger: logger}
 	zapLogger := zap.New(core)
 	if logger == nil {
