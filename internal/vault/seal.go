@@ -4,9 +4,7 @@
 package vault
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,9 +17,8 @@ import (
 	"github.com/openbao/openbao/sdk/v2/helper/shamir"
 	"github.com/openbao/openbao/sdk/v2/physical"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
-	"github.com/ProtonMail/go-crypto/openpgp/packet"
 	wrapping "github.com/openbao/go-kms-wrapping/v2"
+	"github.com/openbao/openbao/v2/internal/helper/pgpkeys"
 	"github.com/openbao/openbao/v2/internal/vault/barrier"
 	"github.com/openbao/openbao/v2/internal/vault/seal"
 )
@@ -339,15 +336,9 @@ func (s *SealConfig) baseValidate() error {
 		if len(s.PGPKeys) != s.SecretShares {
 			return errors.New("count mismatch between number of provided PGP keys and number of shares")
 		}
-		for _, keystring := range s.PGPKeys {
-			data, err := base64.StdEncoding.DecodeString(keystring)
-			if err != nil {
-				return fmt.Errorf("error decoding given PGP key: %w", err)
-			}
-			_, err = openpgp.ReadEntity(packet.NewReader(bytes.NewBuffer(data)))
-			if err != nil {
-				return fmt.Errorf("error parsing given PGP key: %w", err)
-			}
+		// GetEntities reports the first key that fails to decode or parse.
+		if _, err := pgpkeys.GetEntities(s.PGPKeys); err != nil {
+			return err
 		}
 	}
 	return nil
