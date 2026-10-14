@@ -1,0 +1,4 @@
+#!/bin/sh
+# go test -exec wrapper: run Go's js/wasm test binaries under Node with a minimal
+# environment (wasm_exec limits argv+env to 8 KiB, and CI/sandbox envs exceed it).
+exec env -i PATH=/usr/bin:/bin:/usr/local/bin HOME=$HOME TMPDIR=${TMPDIR:-/tmp} GOOS=js GOARCH=wasm node "/root/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/lib/wasm/wasm_exec_node.js" "$@"

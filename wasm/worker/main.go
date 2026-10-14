@@ -18,11 +18,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -79,6 +81,10 @@ func main() {
 // storage is already initialised, then hands off to the regular OpenBao HTTP
 // handler.
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/_worker/") {
+		s.serveDebug(w, r)
+		return
+	}
 	if err := s.ensureCore(r.Context()); err != nil {
 		http.Error(w, "openbao worker: "+err.Error(), http.StatusServiceUnavailable)
 		return
@@ -258,6 +264,39 @@ func newStaticSeal(ctx context.Context) (vault.Seal, error) {
 		return nil, err
 	}
 	return seal, nil
+}
+
+// serveDebug exposes Go runtime memory statistics for the harness. Only
+// enabled when the BAO_WORKER_DEBUG variable is set; MemStats.Sys is the size
+// of the wasm linear memory Go has reserved, which is what counts against the
+// Worker's 128 MB isolate limit (plus the JS heap).
+func (s *server) serveDebug(w http.ResponseWriter, r *http.Request) {
+	if cloudflare.Getenv("BAO_WORKER_DEBUG") == "" {
+		http.NotFound(w, r)
+		return
+	}
+	switch r.URL.Path {
+	case "/_worker/mem":
+		if r.URL.Query().Get("gc") != "" {
+			runtime.GC()
+		}
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"sys_mb":        float64(m.Sys) / 1e6,
+			"heap_sys_mb":   float64(m.HeapSys) / 1e6,
+			"heap_alloc_mb": float64(m.HeapAlloc) / 1e6,
+			"heap_inuse_mb": float64(m.HeapInuse) / 1e6,
+			"stack_sys_mb":  float64(m.StackSys) / 1e6,
+			"num_gc":        m.NumGC,
+			"num_goroutine": runtime.NumGoroutine(),
+			"core_built":    s.core != nil,
+			"sealed":        s.core == nil || s.core.Sealed(),
+		})
+	default:
+		http.NotFound(w, r)
+	}
 }
 
 func apiAddr() string {

@@ -10,11 +10,14 @@
   // Paid plan only: OpenBao's unseal + request handling needs more than the
   // free plan's 10 ms of CPU per request.
   "limits": { "cpu_ms": 30000 },
+  "dev": { "port": 8787, "local_protocol": "http" },
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
       // wrangler hyperdrive create openbao --connection-string="postgres://..."
-      "id": "<hyperdrive-id>"
+      "id": "00000000000000000000000000000000",
+      // 'wrangler dev' talks to this database instead of Hyperdrive
+      "localConnectionString": "postgres://bao:bao@127.0.0.1:5432/bao?sslmode=disable"
     }
   ],
   "vars": {
