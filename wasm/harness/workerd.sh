@@ -13,6 +13,6 @@ case "${1:-start}" in
     echo $! > $PIDF
     for i in $(seq 1 120); do curl -sf -o /dev/null http://127.0.0.1:8787/_worker/mem 2>/dev/null && { echo "workerd up (pid $(cat $PIDF))"; exit 0; }; sleep 1; done
     echo "workerd did not come up; see /tmp/wrangler-dev.log" >&2; tail -30 /tmp/wrangler-dev.log; exit 1;;
-  stop) [ -f $PIDF ] && { pkill -P "$(cat $PIDF)" 2>/dev/null || true; kill "$(cat $PIDF)" 2>/dev/null || true; rm -f $PIDF; }; pkill -x workerd 2>/dev/null || true; echo stopped;;
+  stop) [ -f $PIDF ] && { pkill -P "$(cat $PIDF)" 2>/dev/null || true; kill "$(cat $PIDF)" 2>/dev/null || true; rm -f $PIDF; }; pkill -f "[w]rangler dev" 2>/dev/null || true; pkill -x workerd 2>/dev/null || true; sleep 1; echo stopped;;
   status) curl -s http://127.0.0.1:8787/_worker/mem; echo;;
 esac

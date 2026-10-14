@@ -46,6 +46,9 @@ async function start(env, ctx) {
   // secrets, Hyperdrive binding) is identical for every request in the
   // isolate; ctx.waitUntil is only valid for its own request and is not
   // used by the Go side.
+  // Expose the linear memory so the Go side can report its true size (Go's
+  // MemStats.Sys excludes the data segment).
+  globalThis.__wasmMemory = instance.exports.mem;
   go.run(instance, createRuntimeContext({ env, ctx, binding }));
   await readyPromise;
   return { go, binding };

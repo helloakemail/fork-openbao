@@ -4,9 +4,9 @@
   "main": "./build/worker.mjs",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
-  "build": {
-    "command": "npm run build"
-  },
+  // No custom build: produce ./build with wasm/harness/build.sh (or npm run build)
+  // before 'wrangler dev' / 'wrangler deploy'. A build command here would be
+  // re-run on every dev start and silently replace the bundle.
   // Paid plan only: OpenBao's unseal + request handling needs more than the
   // free plan's 10 ms of CPU per request.
   "limits": { "cpu_ms": 30000 },

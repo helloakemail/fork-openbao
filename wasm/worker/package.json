@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "build": "go run github.com/syumai/workers-go/cmd/workers-assets-gen@v0.36.0 -mode=go && cp loader/worker.mjs build/worker.mjs && cd ../.. && GOOS=js GOARCH=wasm go build -tags hashicorpmetrics -ldflags='-s -w' -o wasm/worker/build/app.wasm ./wasm/worker",
+    "build": "../harness/build.sh",
     "deploy": "wrangler deploy",
     "dev": "wrangler dev"
   },

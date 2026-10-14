@@ -6,4 +6,4 @@ printf '%-28s ' "${1:-mem}"; OUT=$(curl -s "$ADDR/_worker/mem?gc=1"); echo "$OUT
 raw=sys.stdin.read()
 try: m=json.loads(raw)
 except Exception: print("not json:", raw[:200].replace("\n"," ")); sys.exit(0)
-print("sys %.1f  heap_sys %.1f  heap_inuse %.1f  heap_alloc %.1f  stack %.1f  goroutines %d  gc %d  sealed %s" % (m["sys_mb"],m["heap_sys_mb"],m["heap_inuse_mb"],m["heap_alloc_mb"],m["stack_sys_mb"],m["num_goroutine"],m["num_gc"],m["sealed"]))'
+print("linear %.1f  sys %.1f  heap_sys %.1f  heap_inuse %.1f  heap_alloc %.1f  stack %.1f  goroutines %d  gc %d  sealed %s" % (m.get("linear_mb",0),m["sys_mb"],m["heap_sys_mb"],m["heap_inuse_mb"],m["heap_alloc_mb"],m["stack_sys_mb"],m["num_goroutine"],m["num_gc"],m["sealed"]))'

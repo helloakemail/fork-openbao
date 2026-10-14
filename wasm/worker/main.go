@@ -25,8 +25,10 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
+	"syscall/js"
 	"time"
 
 	log "github.com/hashicorp/go-hclog"
@@ -86,6 +88,18 @@ func main() {
 // storage is already initialised, then hands off to the regular OpenBao HTTP
 // handler.
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if p := recover(); p != nil {
+			msg := fmt.Sprintf("openbao worker: panic serving %s %s: %v\n%s", r.Method, r.URL.Path, p, debug.Stack())
+			consoleError(msg)
+			http.Error(w, msg, http.StatusInternalServerError)
+		}
+	}()
+	// workers-go leaves Body nil on body-less requests; net/http's server
+	// never does, and OpenBao's request-size wrapper relies on that.
+	if r.Body == nil {
+		r.Body = http.NoBody
+	}
 	if strings.HasPrefix(r.URL.Path, "/_worker/") {
 		s.serveDebug(w, r)
 		return
@@ -178,6 +192,37 @@ func (s *server) ensureCore(ctx context.Context) error {
 // Worker a per-deployment connection string through its binding; a plain
 // BAO_PG_CONNECTION_URL works too (TLS is then done in pure Go by pgx).
 func newPostgresBackend(ctx context.Context, logger log.Logger) (*postgresql.PostgreSQLBackend, error) {
+	cfg, err := pgxConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	name := stdlib.RegisterConnConfig(cfg)
+
+	conf := map[string]string{
+		"connection_url": name,
+		// Cloudflare tears sockets down when the request that opened them
+		// ends, so by default keep nothing idle between requests.
+		"max_idle_connections": "0",
+		"max_connect_retries":  "1",
+		"ha_enabled":           "false",
+	}
+	if v := cloudflare.Getenv(envTable); v != "" {
+		conf["table"] = v
+	}
+	if v := cloudflare.Getenv(envMaxIdleConns); v != "" {
+		conf["max_idle_connections"] = v
+	}
+
+	b, err := postgresql.NewPostgreSQLBackend(conf, logger)
+	if err != nil {
+		return nil, err
+	}
+	return b.(*postgresql.PostgreSQLBackend), nil
+}
+
+// pgxConfig builds the pgx connection config from the Hyperdrive binding (or
+// BAO_PG_CONNECTION_URL) with dialing routed through Cloudflare sockets.
+func pgxConfig(ctx context.Context) (*pgx.ConnConfig, error) {
 	bindingName := cloudflare.Getenv(envHyperdriveBinding)
 	if bindingName == "" {
 		bindingName = "HYPERDRIVE"
@@ -213,28 +258,11 @@ func newPostgresBackend(ctx context.Context, logger log.Logger) (*postgresql.Pos
 	}
 	cfg.ConnectTimeout = 10 * time.Second
 
-	name := stdlib.RegisterConnConfig(cfg)
+	return cfg, nil
+}
 
-	conf := map[string]string{
-		"connection_url": name,
-		// Cloudflare tears sockets down when the request that opened them
-		// ends, so by default keep nothing idle between requests.
-		"max_idle_connections": "0",
-		"max_connect_retries":  "1",
-		"ha_enabled":           "false",
-	}
-	if v := cloudflare.Getenv(envTable); v != "" {
-		conf["table"] = v
-	}
-	if v := cloudflare.Getenv(envMaxIdleConns); v != "" {
-		conf["max_idle_connections"] = v
-	}
-
-	b, err := postgresql.NewPostgreSQLBackend(conf, logger)
-	if err != nil {
-		return nil, err
-	}
-	return b.(*postgresql.PostgreSQLBackend), nil
+func consoleError(msg string) {
+	js.Global().Get("console").Call("error", msg)
 }
 
 // newStaticSeal builds an auto-seal from the static-key wrapper so that the
@@ -281,6 +309,26 @@ func (s *server) serveDebug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.URL.Path {
+	case "/_worker/pgping":
+		start := time.Now()
+		cfg, err := pgxConfig(r.Context())
+		if err == nil {
+			var conn *pgx.Conn
+			conn, err = pgx.ConnectConfig(r.Context(), cfg)
+			if err == nil {
+				err = conn.Ping(r.Context())
+				conn.Close(r.Context())
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		out := map[string]any{"ms": time.Since(start).Milliseconds(), "host": "", "ok": err == nil}
+		if cfg != nil {
+			out["host"] = fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+		}
+		if err != nil {
+			out["error"] = err.Error()
+		}
+		json.NewEncoder(w).Encode(out)
 	case "/_worker/mem":
 		if r.URL.Query().Get("gc") != "" {
 			runtime.GC()
@@ -288,7 +336,12 @@ func (s *server) serveDebug(w http.ResponseWriter, r *http.Request) {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 		w.Header().Set("Content-Type", "application/json")
+		linear := 0.0
+		if mem := js.Global().Get("__wasmMemory"); !mem.IsUndefined() {
+			linear = float64(mem.Get("buffer").Get("byteLength").Int()) / 1e6
+		}
 		json.NewEncoder(w).Encode(map[string]any{
+			"linear_mb":     linear,
 			"sys_mb":        float64(m.Sys) / 1e6,
 			"heap_sys_mb":   float64(m.HeapSys) / 1e6,
 			"heap_alloc_mb": float64(m.HeapAlloc) / 1e6,
