@@ -9,9 +9,10 @@ Status: **it runs.** Under workerd (`wrangler dev`) against PostgreSQL, the core
 initialises, auto-unseals from the static seal, and passes a black-box API
 suite covering kv, policies and tokens, userpass, AppRole, JWT, transit, PKI,
 the database engine and TTL expiry, three runs in a row, with flat memory
-(67 MB of linear memory, 128 MB limit). The remaining blocker is size: 93 MB
-after wasm-opt against Cloudflare's 64 MiB uncompressed limit, with feature
-removals in progress. Nothing has been deployed to Cloudflare itself yet.
+(67 MB of linear memory, 128 MB limit). Size after the first round of feature
+removals is 67.2 MB after wasm-opt against Cloudflare's 64 MiB (67.1 MB)
+uncompressed limit: 48 KB over, with the grpc/go-plugin removal still in
+progress. Nothing has been deployed to Cloudflare itself yet.
 Everything below is measured in this tree unless marked as an estimate.
 
 ## Layout
@@ -138,7 +139,9 @@ All with Go 1.27.0, `-ldflags="-s -w"`.
 | Worker wasm, full plugin registry | 224 MB | 35 MB |
 | Worker wasm, `baolean` registry | 204 MB | 33 MB |
 | Worker wasm, `baolean` + go-discover excluded | 106 MB | 20 MB |
-| Same, after `wasm-opt -Oz` (binaryen 123, 3.5 min, 7.5 CPU-min) (current tree) | **93 MB** | 20 MB |
+| Same, after `wasm-opt -Oz` (binaryen 123, 3.5 min, 7.5 CPU-min) | 93 MB | 20 MB |
+| + CEL engine and Google Workspace provider excluded | 89.3 MB raw | |
+| + ACME listener TLS, OCI download, KMIP seal, Okta/Duo/PingID MFA, Prometheus/Datadog/Circonus sinks, test helpers, PGP excluded (current tree) | 75.8 MB raw / **67.2 MB opt** | 14.8 MB |
 | **Cloudflare limit (uncompressed, Free and Paid)** | **64 MiB = 67 MB** | no compressed limit |
 
 Section breakdown of the 204 MB build: code 115 MB, data 88 MB (Go's
