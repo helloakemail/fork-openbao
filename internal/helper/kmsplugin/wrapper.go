@@ -1,6 +1,8 @@
 // Copyright (c) 2026 OpenBao a Series of LF Projects, LLC
 // SPDX-License-Identifier: MPL-2.0
 
+//go:build !js
+
 package kmsplugin
 
 import (
@@ -18,13 +20,6 @@ import (
 type wrapperInitFinalizer interface {
 	wrapping.Wrapper
 	wrapping.InitFinalizer
-}
-
-// toWrapper is a hack to go from func() <concrete wrapper type> to func()
-// wrapping.Wrapper, as constructors in go-kms-wrapping tend to return the
-// concrete type.
-func toWrapper[T wrapping.Wrapper](f func() T) func() wrapping.Wrapper {
-	return func() wrapping.Wrapper { return f() }
 }
 
 // ConfigureWrapper creates a new wrapper instance and calls SetConfig with

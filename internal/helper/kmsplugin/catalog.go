@@ -1,6 +1,8 @@
 // Copyright (c) 2026 OpenBao a Series of LF Projects, LLC
 // SPDX-License-Identifier: MPL-2.0
 
+//go:build !js
+
 package kmsplugin
 
 import (
@@ -64,24 +66,6 @@ func newClientKey(p *server.PluginConfig) clientKey {
 		args:    string(args),
 		sha256:  p.SHA256Sum,
 	}
-}
-
-// buildConfigLookup builds a lookup map of plugin configs by name and ensures
-// there are no naming or versioning conflicts.
-func buildConfigLookup(plugins []*server.PluginConfig) (map[string]*server.PluginConfig, error) {
-	index := make(map[string]*server.PluginConfig)
-	for _, plugin := range plugins {
-		// Ignore plugins that aren't type KMS.
-		if typ, _ := consts.ParsePluginType(plugin.Type); typ != consts.PluginTypeKMS {
-			continue
-		}
-		// KMS plugins only support one version at a time.
-		if _, ok := index[plugin.Name]; ok {
-			return nil, fmt.Errorf("cannot register several versions of plugin %q", plugin.Name)
-		}
-		index[plugin.Name] = plugin
-	}
-	return index, nil
 }
 
 // NewCatalog returns a new KMS plugin catalog.
