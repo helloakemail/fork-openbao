@@ -1,6 +1,8 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
+//go:build !js
+
 package dbplugin
 
 import (
@@ -29,6 +31,26 @@ func (dc *DatabasePluginClient) Close() error {
 	dc.client.Kill()
 
 	return err
+}
+
+// newExternalDatabase creates a DatabasePluginClient instance for an external
+// plugin and reports the transport it uses.
+func newExternalDatabase(ctx context.Context, sys pluginutil.RunnerUtil, pluginRunner *pluginutil.PluginRunner, logger log.Logger) (Database, string, error) {
+	// create a DatabasePluginClient instance
+	db, err := NewPluginClient(ctx, sys, pluginRunner, logger, false)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Switch on the underlying database client type to get the transport
+	// method.
+	var transport string
+	switch db.(*DatabasePluginClient).Database.(type) {
+	case *gRPCClient:
+		transport = "gRPC"
+	}
+
+	return db, transport, nil
 }
 
 // NewPluginClient returns a databaseRPCClient with a connection to a running

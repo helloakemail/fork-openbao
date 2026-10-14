@@ -1,6 +1,8 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
+//go:build !js
+
 package dbplugin
 
 import (
@@ -18,8 +20,6 @@ import (
 var (
 	_ Database                = gRPCClient{}
 	_ logical.PluginVersioner = gRPCClient{}
-
-	ErrPluginShutdown = errors.New("plugin shutdown")
 )
 
 type gRPCClient struct {

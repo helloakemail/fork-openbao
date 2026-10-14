@@ -1,6 +1,8 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
+//go:build !js
+
 package plugin
 
 import (
@@ -17,11 +19,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-)
-
-var (
-	ErrPluginShutdown       = errors.New("plugin is shut down")
-	ErrClientInMetadataMode = errors.New("plugin client can not perform action while in metadata mode")
 )
 
 // Validate backendGRPCPluginClient satisfies the logical.Backend interface

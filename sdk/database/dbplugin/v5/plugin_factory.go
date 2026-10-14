@@ -5,12 +5,15 @@ package dbplugin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	log "github.com/hashicorp/go-hclog"
 	"github.com/openbao/openbao/sdk/v2/helper/consts"
 	"github.com/openbao/openbao/sdk/v2/helper/pluginutil"
 )
+
+var ErrPluginShutdown = errors.New("plugin shutdown")
 
 // PluginFactory is used to build plugin database types. It wraps the database
 // object in a logging and metrics middleware.
@@ -48,30 +51,10 @@ func PluginFactoryVersion(ctx context.Context, pluginName string, pluginVersion 
 		transport = "builtin"
 
 	} else {
-		config := pluginutil.PluginClientConfig{
-			Name:            pluginName,
-			PluginType:      consts.PluginTypeDatabase,
-			Version:         pluginVersion,
-			PluginSets:      PluginSets,
-			HandshakeConfig: HandshakeConfig,
-			Logger:          namedLogger,
-			IsMetadataMode:  false,
-			AutoMTLS:        true,
-			Wrapper:         sys,
-		}
-		// create a DatabasePluginClient instance
-		db, err = NewPluginClient(ctx, sys, config)
+		db, transport, err = newExternalDatabase(ctx, pluginName, pluginVersion, sys, namedLogger)
 		if err != nil {
 			return nil, err
 		}
-
-		// Switch on the underlying database client type to get the transport
-		// method.
-		switch db.(*DatabasePluginClient).Database.(type) {
-		case *gRPCClient:
-			transport = "gRPC"
-		}
-
 	}
 
 	typeStr, err := db.Type()

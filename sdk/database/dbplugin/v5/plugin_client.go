@@ -1,14 +1,18 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
+//go:build !js
+
 package dbplugin
 
 import (
 	"context"
 	"errors"
 
+	log "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/openbao/openbao/sdk/v2/database/dbplugin/v5/proto"
+	"github.com/openbao/openbao/sdk/v2/helper/consts"
 	"github.com/openbao/openbao/sdk/v2/helper/pluginutil"
 	"github.com/openbao/openbao/sdk/v2/logical"
 )
@@ -79,4 +83,35 @@ func NewPluginClient(ctx context.Context, sys pluginutil.RunnerUtil, config plug
 		client:   pluginClient,
 		Database: db,
 	}, nil
+}
+
+// newExternalDatabase creates a DatabasePluginClient instance for an external
+// plugin and reports the transport it uses.
+func newExternalDatabase(ctx context.Context, pluginName string, pluginVersion string, sys pluginutil.LookRunnerUtil, namedLogger log.Logger) (Database, string, error) {
+	config := pluginutil.PluginClientConfig{
+		Name:            pluginName,
+		PluginType:      consts.PluginTypeDatabase,
+		Version:         pluginVersion,
+		PluginSets:      PluginSets,
+		HandshakeConfig: HandshakeConfig,
+		Logger:          namedLogger,
+		IsMetadataMode:  false,
+		AutoMTLS:        true,
+		Wrapper:         sys,
+	}
+	// create a DatabasePluginClient instance
+	db, err := NewPluginClient(ctx, sys, config)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Switch on the underlying database client type to get the transport
+	// method.
+	var transport string
+	switch db.(*DatabasePluginClient).Database.(type) {
+	case *gRPCClient:
+		transport = "gRPC"
+	}
+
+	return db, transport, nil
 }

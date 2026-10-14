@@ -7,12 +7,9 @@ import (
 	"context"
 	"time"
 
-	log "github.com/hashicorp/go-hclog"
-	"github.com/hashicorp/go-plugin"
 	"github.com/hashicorp/go-version"
 	"github.com/openbao/openbao/sdk/v2/helper/consts"
 	"github.com/openbao/openbao/sdk/v2/helper/wrapping"
-	"google.golang.org/grpc"
 )
 
 // Looker defines the plugin Lookup function that looks into the plugin catalog
@@ -39,12 +36,6 @@ type LookRunnerUtil interface {
 	RunnerUtil
 }
 
-type PluginClient interface {
-	Conn() grpc.ClientConnInterface
-	Reload() error
-	plugin.ClientProtocol
-}
-
 const MultiplexingCtxKey string = "multiplex_id"
 
 // PluginRunner defines the metadata needed to run a plugin securely with
@@ -61,36 +52,6 @@ type PluginRunner struct {
 	BuiltinFactory func() (any, error) `json:"-" structs:"-"`
 	Oci            bool                `json:"oci" structs:"oci"`
 	Declarative    bool                `json:"declarative" structs:"declarative"`
-}
-
-// Run takes a wrapper RunnerUtil instance along with the go-plugin parameters and
-// returns a configured plugin.Client with TLS Configured and a wrapping token set
-// on PluginUnwrapTokenEnv for plugin process consumption.
-func (r *PluginRunner) Run(ctx context.Context, wrapper RunnerUtil, pluginSets map[int]plugin.PluginSet, hs plugin.HandshakeConfig, env []string, logger log.Logger) (*plugin.Client, error) {
-	return r.RunConfig(
-		ctx,
-		Runner(wrapper),
-		PluginSets(pluginSets),
-		HandshakeConfig(hs),
-		Env(env...),
-		Logger(logger),
-		MetadataMode(false),
-	)
-}
-
-// RunMetadataMode returns a configured plugin.Client that will dispense a plugin
-// in metadata mode. The PluginMetadataModeEnv is passed in as part of the Cmd to
-// plugin.Client, and consumed by the plugin process on api.VaultPluginTLSProvider.
-func (r *PluginRunner) RunMetadataMode(ctx context.Context, wrapper RunnerUtil, pluginSets map[int]plugin.PluginSet, hs plugin.HandshakeConfig, env []string, logger log.Logger) (*plugin.Client, error) {
-	return r.RunConfig(
-		ctx,
-		Runner(wrapper),
-		PluginSets(pluginSets),
-		HandshakeConfig(hs),
-		Env(env...),
-		Logger(logger),
-		MetadataMode(true),
-	)
 }
 
 // VersionedPlugin holds any versioning information stored about a plugin in the

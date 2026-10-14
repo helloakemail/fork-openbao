@@ -1,12 +1,13 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
+//go:build !js
+
 package dbplugin
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"time"
 
 	"google.golang.org/grpc"
@@ -14,12 +15,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	plugin "github.com/hashicorp/go-plugin"
 	"github.com/openbao/openbao/sdk/v2/helper/pluginutil"
-)
-
-var (
-	ErrPluginShutdown          = errors.New("plugin shutdown")
-	ErrPluginStaticUnsupported = errors.New("database plugin does not support Static Accounts")
 )
 
 // ---- gRPC Server domain ----
@@ -355,4 +352,45 @@ func (c *gRPCClient) SetCredentials(ctx context.Context, statements Statements, 
 	}
 
 	return resp.Username, resp.Password, err
+}
+
+// handshakeConfigs are used to just do a basic handshake between
+// a plugin and host. If the handshake fails, a user friendly error is shown.
+// This prevents users from executing bad plugins or executing a plugin
+// directory. It is a UX feature, not a security feature.
+var handshakeConfig = plugin.HandshakeConfig{
+	ProtocolVersion:  4,
+	MagicCookieKey:   "VAULT_DATABASE_PLUGIN",
+	MagicCookieValue: "926a0820-aea2-be28-51d6-83cdf00e8edb",
+}
+
+var (
+	_ plugin.Plugin     = &GRPCDatabasePlugin{}
+	_ plugin.GRPCPlugin = &GRPCDatabasePlugin{}
+)
+
+// GRPCDatabasePlugin is the plugin.Plugin implementation that only supports GRPC
+// transport
+type GRPCDatabasePlugin struct {
+	Impl Database
+
+	// Embeding this will disable the netRPC protocol
+	plugin.NetRPCUnsupportedPlugin
+}
+
+func (d GRPCDatabasePlugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
+	impl := &DatabaseErrorSanitizerMiddleware{
+		next: d.Impl,
+	}
+
+	RegisterDatabaseServer(s, &gRPCServer{impl: impl})
+	return nil
+}
+
+func (GRPCDatabasePlugin) GRPCClient(doneCtx context.Context, _ *plugin.GRPCBroker, c *grpc.ClientConn) (any, error) {
+	return &gRPCClient{
+		client:     NewDatabaseClient(c),
+		clientConn: c,
+		doneCtx:    doneCtx,
+	}, nil
 }

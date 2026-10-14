@@ -192,6 +192,13 @@ proto: bootstrap
 	$(SED) -i -e 's/Id/ID/' -e 's/SPDX-License-IDentifier/SPDX-License-Identifier/' internal/vault/forwarding/request_forwarding_service.pb.go
 	$(SED) -i -e 's/Idp/IDP/' -e 's/Url/URL/' -e 's/Id/ID/' -e 's/IDentity/Identity/' -e 's/EntityId/EntityID/' -e 's/Api/API/' -e 's/Qr/QR/' -e 's/Totp/TOTP/' -e 's/Mfa/MFA/' -e 's/Pingid/PingID/' -e 's/namespaceId/namespaceID/' -e 's/Ttl/TTL/' -e 's/BoundCidrs/BoundCIDRs/' -e 's/SPDX-License-IDentifier/SPDX-License-Identifier/' internal/helper/identity/types.pb.go internal/helper/identity/mfa/types.pb.go internal/helper/storagepacker/types.pb.go sdk/plugin/pb/backend.pb.go sdk/logical/identity.pb.go
 
+	# The js/wasm build (wasm/) has no gRPC. Generated gRPC service stubs in
+	# packages that build compiles are excluded from it; protoc cannot emit
+	# build constraints, so add them back after generation.
+	for f in sdk/logical/version_grpc.pb.go sdk/plugin/pb/backend_grpc.pb.go sdk/helper/pluginutil/multiplexing_grpc.pb.go sdk/database/dbplugin/database_grpc.pb.go; do \
+		printf '//go:build !js\n\n' | cat - "$$f" > "$$f.tmp" && mv "$$f.tmp" "$$f"; \
+	done
+
 .PHONY: fmtcheck
 fmtcheck:
 	./scripts/gofmtcheck.sh

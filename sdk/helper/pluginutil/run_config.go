@@ -1,6 +1,8 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
+//go:build !js
+
 package pluginutil
 
 import (
@@ -14,6 +16,7 @@ import (
 	"github.com/hashicorp/go-plugin"
 	"github.com/openbao/openbao/api/v2"
 	"github.com/openbao/openbao/sdk/v2/helper/consts"
+	"google.golang.org/grpc"
 )
 
 type PluginClientConfig struct {
@@ -193,4 +196,40 @@ func (r *PluginRunner) RunConfig(ctx context.Context, opts ...RunOpt) (*plugin.C
 	}
 
 	return rc.run(ctx)
+}
+
+type PluginClient interface {
+	Conn() grpc.ClientConnInterface
+	Reload() error
+	plugin.ClientProtocol
+}
+
+// Run takes a wrapper RunnerUtil instance along with the go-plugin parameters and
+// returns a configured plugin.Client with TLS Configured and a wrapping token set
+// on PluginUnwrapTokenEnv for plugin process consumption.
+func (r *PluginRunner) Run(ctx context.Context, wrapper RunnerUtil, pluginSets map[int]plugin.PluginSet, hs plugin.HandshakeConfig, env []string, logger log.Logger) (*plugin.Client, error) {
+	return r.RunConfig(
+		ctx,
+		Runner(wrapper),
+		PluginSets(pluginSets),
+		HandshakeConfig(hs),
+		Env(env...),
+		Logger(logger),
+		MetadataMode(false),
+	)
+}
+
+// RunMetadataMode returns a configured plugin.Client that will dispense a plugin
+// in metadata mode. The PluginMetadataModeEnv is passed in as part of the Cmd to
+// plugin.Client, and consumed by the plugin process on api.VaultPluginTLSProvider.
+func (r *PluginRunner) RunMetadataMode(ctx context.Context, wrapper RunnerUtil, pluginSets map[int]plugin.PluginSet, hs plugin.HandshakeConfig, env []string, logger log.Logger) (*plugin.Client, error) {
+	return r.RunConfig(
+		ctx,
+		Runner(wrapper),
+		PluginSets(pluginSets),
+		HandshakeConfig(hs),
+		Env(env...),
+		Logger(logger),
+		MetadataMode(true),
+	)
 }
