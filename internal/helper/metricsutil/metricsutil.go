@@ -4,7 +4,6 @@
 package metricsutil
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,8 +12,6 @@ import (
 
 	metrics "github.com/hashicorp/go-metrics/compat"
 	"github.com/openbao/openbao/sdk/v2/logical"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/expfmt"
 )
 
 const (
@@ -127,28 +124,7 @@ func (m *MetricsHelper) PrometheusResponse() *logical.Response {
 		resp.Data[logical.HTTPRawBody] = "prometheus is not enabled"
 		return resp
 	}
-	metricsFamilies, err := prometheus.DefaultGatherer.Gather()
-	if err != nil && len(metricsFamilies) == 0 {
-		resp.Data[logical.HTTPRawBody] = fmt.Sprintf("no prometheus metrics could be decoded: %s", err)
-		return resp
-	}
-
-	// Initialize a byte buffer.
-	buf := &bytes.Buffer{}
-	defer buf.Reset()
-
-	e := expfmt.NewEncoder(buf, expfmt.NewFormat(expfmt.TypeTextPlain))
-	for _, mf := range metricsFamilies {
-		err := e.Encode(mf)
-		if err != nil {
-			resp.Data[logical.HTTPRawBody] = fmt.Sprintf("error during the encoding of metrics: %s", err)
-			return resp
-		}
-	}
-	resp.Data[logical.HTTPContentType] = string(expfmt.NewFormat(expfmt.TypeTextPlain))
-	resp.Data[logical.HTTPRawBody] = buf.Bytes()
-	resp.Data[logical.HTTPStatusCode] = http.StatusOK
-	return resp
+	return writePrometheusMetrics(resp)
 }
 
 func (m *MetricsHelper) GenericResponse() *logical.Response {

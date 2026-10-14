@@ -12,9 +12,6 @@ import (
 
 	"github.com/hashicorp/cli"
 	metrics "github.com/hashicorp/go-metrics/compat"
-	"github.com/hashicorp/go-metrics/compat/circonus"
-	"github.com/hashicorp/go-metrics/compat/datadog"
-	"github.com/hashicorp/go-metrics/compat/prometheus"
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/hcl"
 	"github.com/hashicorp/hcl/hcl/ast"
@@ -277,11 +274,7 @@ func SetupTelemetry(opts *SetupTelemetryOpts) (*metrics.InmemSink, *metricsutil.
 	// Configure the Prometheus sink
 	if opts.Config.PrometheusRetentionTime != 0 {
 		prometheusEnabled = true
-		prometheusOpts := prometheus.PrometheusOpts{
-			Expiration: opts.Config.PrometheusRetentionTime,
-		}
-
-		sink, err := prometheus.NewPrometheusSinkFrom(prometheusOpts)
+		sink, err := newPrometheusSink(opts)
 		if err != nil {
 			return nil, nil, false, err
 		}
@@ -307,53 +300,18 @@ func SetupTelemetry(opts *SetupTelemetryOpts) (*metrics.InmemSink, *metricsutil.
 
 	// Configure the Circonus sink
 	if opts.Config.CirconusAPIToken != "" || opts.Config.CirconusCheckSubmissionURL != "" {
-		cfg := &circonus.Config{}
-		cfg.Interval = opts.Config.CirconusSubmissionInterval
-		cfg.CheckManager.API.TokenKey = opts.Config.CirconusAPIToken
-		cfg.CheckManager.API.TokenApp = opts.Config.CirconusAPIApp
-		cfg.CheckManager.API.URL = opts.Config.CirconusAPIURL
-		cfg.CheckManager.Check.SubmissionURL = opts.Config.CirconusCheckSubmissionURL
-		cfg.CheckManager.Check.ID = opts.Config.CirconusCheckID
-		cfg.CheckManager.Check.ForceMetricActivation = opts.Config.CirconusCheckForceMetricActivation
-		cfg.CheckManager.Check.InstanceID = opts.Config.CirconusCheckInstanceID
-		cfg.CheckManager.Check.SearchTag = opts.Config.CirconusCheckSearchTag
-		cfg.CheckManager.Check.DisplayName = opts.Config.CirconusCheckDisplayName
-		cfg.CheckManager.Check.Tags = opts.Config.CirconusCheckTags
-		cfg.CheckManager.Broker.ID = opts.Config.CirconusBrokerID
-		cfg.CheckManager.Broker.SelectTag = opts.Config.CirconusBrokerSelectTag
-
-		if cfg.CheckManager.API.TokenApp == "" {
-			cfg.CheckManager.API.TokenApp = opts.ServiceName
-		}
-
-		if cfg.CheckManager.Check.DisplayName == "" {
-			cfg.CheckManager.Check.DisplayName = opts.DisplayName
-		}
-
-		if cfg.CheckManager.Check.SearchTag == "" {
-			cfg.CheckManager.Check.SearchTag = fmt.Sprintf("service:%s", opts.ServiceName)
-		}
-
-		sink, err := circonus.NewCirconusSink(cfg)
+		sink, err := newCirconusSink(opts)
 		if err != nil {
 			return nil, nil, false, err
 		}
-		sink.Start()
 		fanout = append(fanout, sink)
 	}
 
 	if opts.Config.DogStatsDAddr != "" {
-		var tags []string
-
-		if opts.Config.DogStatsDTags != nil {
-			tags = opts.Config.DogStatsDTags
-		}
-
-		sink, err := datadog.NewDogStatsdSink(opts.Config.DogStatsDAddr, metricsConf.HostName)
+		sink, err := newDogStatsdSink(opts, metricsConf.HostName)
 		if err != nil {
 			return nil, nil, false, fmt.Errorf("failed to start DogStatsD sink: %w", err)
 		}
-		sink.SetTags(tags)
 		fanout = append(fanout, sink)
 	}
 
