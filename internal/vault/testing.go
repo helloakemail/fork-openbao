@@ -1,6 +1,8 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
+//go:build !js
+
 package vault
 
 import (
@@ -1163,10 +1165,6 @@ type PhysicalBackendBundle struct {
 	Backend   physical.Backend
 	HABackend physical.HABackend
 	Cleanup   func()
-}
-
-type HandlerHandler interface {
-	Handler(*HandlerProperties) http.Handler
 }
 
 type TestClusterOptions struct {
