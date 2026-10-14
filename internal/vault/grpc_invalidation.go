@@ -13,7 +13,6 @@ import (
 	log "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-multierror"
 	uuid "github.com/hashicorp/go-uuid"
-	"google.golang.org/grpc"
 	"zgo.at/zcache/v2"
 )
 
@@ -40,7 +39,7 @@ type invalidationPeers struct {
 }
 
 type invalidationPeerInfo struct {
-	stream grpc.ServerStreamingServer[forwarding.CheckInvalidationResponse]
+	stream forwarding.InvalidationStream
 	stopCh chan struct{}
 
 	started bool
@@ -159,14 +158,14 @@ func (i *invalidationPeers) SendInvalidation(index string, keys []string) error 
 
 // AddInvalidationPeer tracks a new invalidation peer identified by the given
 // stream, yielding (an identifier and a cancel channel) or an error.
-func (c *Core) AddInvalidationPeer(stream grpc.ServerStreamingServer[forwarding.CheckInvalidationResponse]) (string, chan struct{}, error) {
+func (c *Core) AddInvalidationPeer(stream forwarding.InvalidationStream) (string, chan struct{}, error) {
 	return c.connectedInvalidationPeers.AddPeer(stream)
 }
 
 // AddPeer handles assignment of the peer to the currently tracked subset,
 // using the specified stream. It yields (an identifier and a cancel channel)
 // or an error.
-func (i *invalidationPeers) AddPeer(stream grpc.ServerStreamingServer[forwarding.CheckInvalidationResponse]) (string, chan struct{}, error) {
+func (i *invalidationPeers) AddPeer(stream forwarding.InvalidationStream) (string, chan struct{}, error) {
 	i.l.RLock()
 	defer i.l.RUnlock()
 

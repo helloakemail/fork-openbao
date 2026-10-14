@@ -195,7 +195,7 @@ proto: bootstrap
 	# The js/wasm build (wasm/) has no gRPC. Generated gRPC service stubs in
 	# packages that build compiles are excluded from it; protoc cannot emit
 	# build constraints, so add them back after generation.
-	for f in sdk/logical/version_grpc.pb.go sdk/plugin/pb/backend_grpc.pb.go sdk/helper/pluginutil/multiplexing_grpc.pb.go sdk/database/dbplugin/database_grpc.pb.go; do \
+	for f in sdk/logical/version_grpc.pb.go sdk/plugin/pb/backend_grpc.pb.go sdk/helper/pluginutil/multiplexing_grpc.pb.go sdk/database/dbplugin/database_grpc.pb.go internal/vault/forwarding/request_forwarding_service_grpc.pb.go; do \
 		printf '//go:build !js\n\n' | cat - "$$f" > "$$f.tmp" && mv "$$f.tmp" "$$f"; \
 	done
 

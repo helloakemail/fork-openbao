@@ -1,6 +1,8 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
+//go:build !js
+
 package forwarding
 
 import (
@@ -73,13 +75,6 @@ func (s *forwardedRequestRPCServer) ForwardRequest(ctx context.Context, freq *fo
 	return resp, nil
 }
 
-type NodeHAConnectionInfo struct {
-	NodeInfo       *NodeInformation
-	LastHeartbeat  time.Time
-	Version        string
-	UpgradeVersion string
-}
-
 func (s *forwardedRequestRPCServer) Echo(ctx context.Context, in *EchoRequest) (*EchoReply, error) {
 	incomingNodeConnectionInfo := NodeHAConnectionInfo{
 		NodeInfo:       in.NodeInfo,
@@ -141,6 +136,10 @@ func (s *forwardedRequestRPCServer) StartInvalidations(ctx context.Context, req 
 		Index: index,
 	}, nil
 }
+
+// InvalidationStream is the server side of the CheckInvalidations stream,
+// over which the active node pushes invalidations to a standby.
+type InvalidationStream = grpc.ServerStreamingServer[CheckInvalidationResponse]
 
 func (s *forwardedRequestRPCServer) CheckInvalidations(req *CheckInvalidationRequest, stream grpc.ServerStreamingServer[CheckInvalidationResponse]) error {
 	uuid, stopCh, err := s.core.AddInvalidationPeer(stream)
