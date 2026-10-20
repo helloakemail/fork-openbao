@@ -154,6 +154,27 @@ Goroutines sit at 523: 500 are the expiration manager's fair-share workers,
 a tunable. The data segment shrinks with every size removal, so memory is
 not the limiting resource.
 
+## Native verification of the build-tag surgery
+
+Every exclusion is a `!js` split, so the native binary must behave exactly
+as before. Checked on the merged tree with a Docker daemon available:
+
+- `go build ./...` (root and sdk modules), `go vet` on every touched package.
+- Full native packages: `internal/vault`, `internal/http`, jwt, pki,
+  profiles, configutil, listenerutil, metricsutil, pgpkeys, oci,
+  kmsplugin (including `TestKMS` with a real external KMS plugin),
+  `internal/physical/postgresql` against a containerised Postgres, and the
+  full database secrets engine package (mock v4/v5 external plugins over
+  gRPC plus Postgres containers, 9 minutes).
+- SDK: pluginutil, logical, plugin, dbplugin v4/v5.
+- OpenBao's binary-driven external tests with `BAO_BINARY` built from this
+  tree: `postgresql_binary` (fenced writes, parallel init, fatal init,
+  upgrade, scalability: three real nodes in containers with HA forwarding
+  and gRPC invalidation) and `userpass_binary`.
+
+What OpenBao's own suite cannot do is run against the Worker: its tests build
+cores in-process. The `wasm/acceptance` package is the black-box substitute.
+
 ## Measured sizes
 
 All with Go 1.27.0, `-ldflags="-s -w"`.
